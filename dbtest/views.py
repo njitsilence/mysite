@@ -14,6 +14,7 @@ def index(request):
 def daily_check(request):
     bt = time.time()
     # oms每天跟wms核对一下库存数量，并据此进行同步确认。同步的单位是：某个仓库的某件商品。
+
     owner_list = []
     warehouse_list = []
     item_code_list = []
@@ -21,24 +22,52 @@ def daily_check(request):
     page_index = 1
     page_size =30
     # 异动源：多个用户，多个仓库，多件商品。
+    #----------- 访问表 InventoryQueryResponse 获取全部objects
+    print('#1', time.time())
+    t1 = time.time()
     report_list = InventoryQueryResponse.objects.all().order_by('-created_at')
+    t2 = time.time()
+    t_a = (t2 - t1)*1000
     # print(len(report_list))
+    #----------- 通过两个栏位查询 --------
+    t1 = time.time()
     if 'warehouse_code' in {'warehouse_code':1}:
         report_list = report_list.filter(warehouse_code='cf3c23f41a6142fa9e4d011b71ed8018')
     if 'warehouse_id' in {'warehouse_id':1}:
         report_list = report_list.filter(warehouse_id='WH10000085')
+    t2 = time.time()
+    t_b = (t2 - t1)*1000
+    print('###一',time.time())
     # print(len(report_list))
+    # ----------- 通过两个栏位查询 --------
+    # ----------- 访问表 InventoryQueryResponse 获取全部objects
+    t1 = time.time()
     if len(report_list) == 0:
         return HttpResponse("report_list == 0")
+    t2 = time.time()
+    print('用在len(report_list)的时间',t2-t1)
     # user_id + item_code 唯一定位一件商品
+    #Join 表SkuItemId和表Sku
+    t1 = time.time()
     items_list = SkuItemId.objects.all().select_related('sku').\
         order_by('-created_at')
+    t2 = time.time()
+    t_c = (t2 - t1)*1000
+    # Join 表SkuItemId和表Sku
+    print(t2,t1)
+    print('###二', time.time())
+    #通过3个栏位 查询
+    t1 = time.time()
     if 'sku_name' in {'sku_name':'sku_name'}:
         items_list = items_list.filter(sku__sku_name__contains='山东老馒头')
     if 'item_code' in {'item_code':1}:
         items_list = items_list.filter(sku__item_code='2160336813')
     if 'bar_code' in {'bar_code':1}:
         items_list = items_list.filter(sku__bar_code='7362737283756')
+    t2 = time.time()
+    t_d = (t2 - t1)*1000
+    print('###三', time.time())
+    # 通过3个栏位 查询
     # if 'user_name' in param.keys():
     #     id_list, user_list = get_user_list(nickname=param['user_name'])
     #     items_list = items_list.filter(user_id__in=id_list)
@@ -46,7 +75,7 @@ def daily_check(request):
     #     id_list, user_list = get_user_list(phone=param['user_phone'])
     #     items_list = items_list.filter(user_id__in=id_list)
     # 如果搜索条件不满足，返回空。
-    print(len(items_list))
+    print('#2', time.time())
     if len(items_list) == 0:
         return HttpResponse("items_list == 0")
     for report in report_list:
@@ -62,6 +91,7 @@ def daily_check(request):
                                    item_code__in=item_code_list,
                                    warehouse_id__in=warehouse_list)
     print('report num=', len(items_list))
+    print('#3', time.time())
     # 逐件商品查，是否有异动，有则展示最近一次异动记录。前提条件：任何一件商品，都在sku_item_id表中有记录。
     for item in items_list:
         # owner_code + item_code + warehouse_id这三个值才能唯一确定某个仓库中的某件商品.
@@ -104,6 +134,7 @@ def daily_check(request):
         #         break
         bill_list.append(shows)
     # 排序输出（首先是时间倒序排，然后是变化差值最大倒序排）。
+    print('#4', time.time())
     bill_list.sort(key=lambda x: x['abs_diff_quantity'], reverse=True)
     paginator = Paginator(bill_list, page_size)
     try:
@@ -112,6 +143,20 @@ def daily_check(request):
         items = paginator.page(1)
     except EmptyPage:
         items = paginator.page(paginator.num_pages)
-
+    print('#5', time.time())
     et = time.time()
-    return HttpResponse("daily check done elapse time is{}".format(et-bt))
+    t_e = et - bt
+    ##############################################
+    #t_a   获取全部InventoryQueryResponse objects的时间
+    #t_b   通过两个栏位查询InventoryQueryResponse的时间
+    #t_c   获取全部表SkuItemId和表Sku objects的时间
+    #t_d   通过三个栏位查询表SkuItemId和表Sku的时间
+    #t_e   整个daily_check跑完的时间
+    #
+    ##############################################
+
+    return HttpResponse("获取全部InventoryQueryResponse objects的时间{}毫秒<br>"
+                        "通过两个栏位查询InventoryQueryResponse的时间{}毫秒<br>"
+                        "获取全部表SkuItemId和表Sku objects的时间{}毫秒<br>"
+                        "通过三个栏位查询表SkuItemId和表Sku的时间{}毫秒<br>"
+                        "整个daily_check跑完的时间{}秒".format(t_a,t_b,t_c,t_d,t_e))
